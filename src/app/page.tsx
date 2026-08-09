@@ -93,6 +93,16 @@ export default function Home() {
           </p>
         )}
       </section>
+
+      {/* A Meta exige as duas URLs abaixo para publicar o app. */}
+      <footer className="mt-10 flex gap-4 border-t border-neutral-200 pt-5 text-[13px] text-neutral-500">
+        <Link href="/privacidade" className="underline hover:text-neutral-900">
+          Política de Privacidade
+        </Link>
+        <Link href="/exclusao-de-dados" className="underline hover:text-neutral-900">
+          Exclusão de dados
+        </Link>
+      </footer>
     </div>
   );
 }
