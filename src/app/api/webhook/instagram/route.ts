@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { after } from "next/server";
 import { verifyWebhookSignature } from "@/lib/meta";
 import { db } from "@/lib/supabase";
+import { enqueueFollowups, enqueueForTrigger, type TriggerKind } from "@/lib/enqueue";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -217,7 +218,24 @@ export async function POST(req: Request) {
           continue;
         }
 
-        await recordContact(e);
+        const contactId = await recordContact(e);
+        const trigger = {
+          kind: e.kind as TriggerKind,
+          igUserId: e.igUserId,
+          username: e.username,
+          text: e.text,
+          ref: e.ref,
+          mediaId: e.mediaId,
+          contactId,
+        };
+
+        // Toque no botão abre a janela e libera a sequência; qualquer outro
+        // evento é um gatilho que pode iniciar uma automação.
+        if (e.kind === "postback") {
+          await enqueueFollowups(trigger);
+        } else if (e.kind !== "unknown") {
+          await enqueueForTrigger(trigger);
+        }
       }
     } catch (err) {
       console.error("falha ao processar webhook", err);
