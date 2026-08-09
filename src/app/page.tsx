@@ -1,5 +1,10 @@
 import Link from "next/link";
 
+// Sem isto o Next prerenderiza esta página no build e congela o resultado da
+// checagem. Variável cadastrada depois do build continuaria aparecendo como
+// "faltando" até o próximo deploy. Aqui a leitura acontece a cada request.
+export const dynamic = "force-dynamic";
+
 /** Só reporta presença/ausência — nenhum valor de credencial chega ao navegador. */
 const CHECKS: { key: string; label: string; why: string }[] = [
   {
