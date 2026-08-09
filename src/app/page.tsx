@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { db } from "@/lib/supabase";
 
 // Sem isto o Next prerenderiza esta página no build e congela o resultado da
 // checagem. Variável cadastrada depois do build continuaria aparecendo como
@@ -39,9 +40,30 @@ const CHECKS: { key: string; label: string; why: string }[] = [
   },
 ];
 
-export default function Home() {
+type Conta = {
+  ig_username: string | null;
+  ig_user_id: string | null;
+  token_expires_at: string | null;
+};
+
+/** Lê a linha única de config. Devolve null se o banco não responder. */
+async function contaConectada(): Promise<Conta | null> {
+  try {
+    const { data } = await db()
+      .from("config")
+      .select("ig_username, ig_user_id, token_expires_at")
+      .eq("id", 1)
+      .maybeSingle();
+    return data?.ig_user_id ? (data as Conta) : null;
+  } catch {
+    return null;
+  }
+}
+
+export default async function Home() {
   const status = CHECKS.map((c) => ({ ...c, ok: Boolean(process.env[c.key]) }));
   const missing = status.filter((s) => !s.ok).length;
+  const conta = await contaConectada();
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-14">
@@ -58,6 +80,33 @@ export default function Home() {
       </Link>
 
       <section className="mt-10">
+        <h2 className="text-[13px] font-semibold uppercase tracking-wide text-neutral-500">
+          Conta do Instagram
+        </h2>
+        {conta ? (
+          <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+            <p className="text-[14px] text-emerald-900">
+              Conectada como <strong>@{conta.ig_username ?? conta.ig_user_id}</strong>
+            </p>
+            {conta.token_expires_at && (
+              <p className="mt-0.5 text-[12px] text-emerald-700">
+                Token válido até{" "}
+                {new Date(conta.token_expires_at).toLocaleDateString("pt-BR")}
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="mt-3 rounded-xl border border-neutral-200 px-4 py-3">
+            <p className="text-[14px] text-neutral-700">Nenhuma conta conectada.</p>
+            <p className="mt-0.5 text-[12px] text-neutral-500">
+              Abra a &quot;URL incorporado&quot; do passo 4 no painel da Meta para
+              autorizar.
+            </p>
+          </div>
+        )}
+      </section>
+
+      <section className="mt-8">
         <h2 className="text-[13px] font-semibold uppercase tracking-wide text-neutral-500">
           Configuração
         </h2>

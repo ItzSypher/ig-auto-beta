@@ -103,12 +103,11 @@ export async function GET(req: Request) {
   };
 
   try {
-    const supabase = db();
-    const { data: existing } = await supabase.from("config").select("id").limit(1);
-
-    const { error } = existing?.length
-      ? await supabase.from("config").update(row).eq("id", existing[0].id)
-      : await supabase.from("config").insert(row);
+    // config tem CHECK (id = 1): é uma tabela de linha única e o id é fixo.
+    // upsert cobre os dois casos, com ou sem linha existente.
+    const { error } = await db()
+      .from("config")
+      .upsert({ id: 1, ...row }, { onConflict: "id" });
 
     if (error) throw error;
   } catch (err) {
