@@ -15,14 +15,16 @@ Projeto: `zxzhyzubeyqddnlsepgs` (org FOXTI, projeto VEMDM).
 `token_expires_at, token_refreshed_at, created_at, updated_at`
 
 ### automations
-`id, name, active, trigger_comment, trigger_story_reply, trigger_dm,`
-`keywords, match_type, media_id, public_replies, welcome_dm,`
-`quick_reply_label, link_message, link_button_label, link_url,`
-`link_delay_seconds, reminder_message, ...`
+`id (uuid), name (text), active (bool), trigger_comment (bool),`
+`trigger_story_reply (bool), trigger_dm (bool), keywords (array),`
+`match_type (text), media_id (text), public_replies (array),`
+`welcome_dm (text), quick_reply_label (text), link_message (text),`
+`link_button_label (text), link_url (text), link_delay_seconds (int),`
+`reminder_message (text), reminder_delay_seconds (int),`
+`reminder_enabled (bool), created_at, updated_at`
 
-> ⚠️ A listagem veio cortada na tela. Faltam confirmar as colunas depois de
-> `reminder_message` — em especial se existe uma coluna `jsonb` para guardar o
-> grafo do flow builder. Sem ela, o builder não tem onde salvar os nodes.
+Mais `flow (jsonb)`, acrescentada por `ajustes.sql` — é onde o flow builder
+guarda os nodes e as ligações.
 
 ### followups
 `id, automation_id, step_order, kind, body, button_label, button_url,`
@@ -45,12 +47,24 @@ furar a janela. `dedupe_key` impede o envio repetido.
 ### events
 `id, kind, ig_user_id, payload, signature_ok, note, dedupe_key, created_at`
 
-## Ainda por confirmar
+## Funções que já existem
 
-- Colunas finais de `automations` (ver aviso acima)
-- Se a função de trava atômica da fila existe (`claim_queue_batch` ou similar)
-- Se a RLS está ligada em todas as tabelas
+| Função | Para quê |
+| --- | --- |
+| `claim_queue_batch(p_limit integer)` | trava atômica do worker ao puxar um lote |
+| `expire_stale_queue()` | devolve para a fila o que ficou preso em `sending` |
+| `sent_last_hour()` | contador para respeitar o teto de 200 envios/hora |
+| `touch_updated_at()` | trigger que mantém `updated_at` |
+| `rls_auto_enable()` | liga RLS automaticamente em tabela nova |
+
+## RLS
+
+Ligada nas seis tabelas (`config`, `automations`, `followups`, `contacts`,
+`queue`, `events`), sem políticas. Só o servidor entra, com a secret key.
+
+## Ainda por conferir
+
 - Índice único em `queue.dedupe_key`
 
-Qualquer ajuste que faltar vai entrar aqui como `ajustes.sql`, contendo só o
-delta — nunca um `create table` de algo que já existe.
+Qualquer ajuste entra como `ajustes.sql`, contendo só o delta — nunca um
+`create table` de algo que já existe.
