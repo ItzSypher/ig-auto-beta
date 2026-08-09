@@ -99,6 +99,9 @@ export default function Home() {
         <Link href="/privacidade" className="underline hover:text-neutral-900">
           Política de Privacidade
         </Link>
+        <Link href="/termos" className="underline hover:text-neutral-900">
+          Termos de Serviço
+        </Link>
         <Link href="/exclusao-de-dados" className="underline hover:text-neutral-900">
           Exclusão de dados
         </Link>
