@@ -14,7 +14,7 @@ const CHECKS: { key: string; label: string; why: string }[] = [
   },
   {
     key: "IG_APP_SECRET",
-    label: "App Secret da Meta",
+    label: "Chave secreta do app do Instagram",
     why: "Valida a assinatura X-Hub-Signature-256 do webhook.",
   },
   {
