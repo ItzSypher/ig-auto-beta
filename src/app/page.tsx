@@ -72,12 +72,26 @@ export default async function Home() {
         Comentário vira DM. Sem mensalidade, rodando em planos grátis.
       </p>
 
-      <Link
-        href="/builder"
-        className="mt-6 inline-block rounded-lg bg-neutral-900 px-4 py-2.5 text-[14px] font-medium text-white transition hover:bg-neutral-700"
-      >
-        Abrir o Flow Builder
-      </Link>
+      <div className="mt-6 flex flex-wrap gap-2">
+        <Link
+          href="/builder"
+          className="rounded-lg bg-neutral-900 px-4 py-2.5 text-[14px] font-medium text-white transition hover:bg-neutral-700"
+        >
+          Abrir o Flow Builder
+        </Link>
+        <Link
+          href="/atividade"
+          className="rounded-lg border border-neutral-300 px-4 py-2.5 text-[14px] font-medium text-neutral-800 transition hover:border-neutral-900"
+        >
+          Atividade
+        </Link>
+        <Link
+          href="/midias"
+          className="rounded-lg border border-neutral-300 px-4 py-2.5 text-[14px] font-medium text-neutral-800 transition hover:border-neutral-900"
+        >
+          Minhas publicações
+        </Link>
+      </div>
 
       <section className="mt-10">
         <h2 className="text-[13px] font-semibold uppercase tracking-wide text-neutral-500">
