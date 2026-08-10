@@ -9,6 +9,8 @@ type Resultado = {
   pagina?: { id: string; nome: string };
   aceitos?: string[];
   recusados?: { campo: string; motivo: string }[];
+  escopos?: string[];
+  tem_pages_manage_metadata?: boolean;
 };
 
 /**
@@ -78,6 +80,17 @@ export function SubscribeButton() {
           {res.recusados && res.recusados.length > 0 && (
             <p className="mt-1 opacity-80">
               Recusados: {res.recusados.map((r) => r.campo).join(", ")}
+            </p>
+          )}
+          {res.escopos && res.escopos.length > 0 && (
+            <p className="mt-1 opacity-80">
+              Permissões do token: {res.escopos.join(", ")}
+            </p>
+          )}
+          {res.tem_pages_manage_metadata === false && (
+            <p className="mt-1 font-medium">
+              Falta pages_manage_metadata no token — é ela que autoriza inscrever
+              a Página.
             </p>
           )}
           {res.erro && <p>{res.erro}</p>}

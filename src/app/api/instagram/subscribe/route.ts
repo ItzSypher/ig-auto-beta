@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { GRAPH, account } from "@/lib/ig";
+import { GRAPH, account, inspectToken } from "@/lib/ig";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -83,6 +83,11 @@ export async function POST(req: Request) {
   );
   const confirmado = await conf.json().catch(() => null);
 
+  // Escopos do token: sem isto ficaríamos adivinhando se a permissão que a
+  // Meta exige para inscrever a Página está presente.
+  const info = await inspectToken(conta.token);
+  const escopos = info.ok ? info.escopos : [];
+
   const nenhum = aceitos.length === 0;
   return NextResponse.json(
     {
@@ -90,6 +95,8 @@ export async function POST(req: Request) {
       pagina: { id: me.id, nome: me.name },
       aceitos,
       recusados,
+      escopos,
+      tem_pages_manage_metadata: escopos.includes("pages_manage_metadata"),
       confirmado: confirmado?.data ?? confirmado,
       ...(nenhum
         ? {
