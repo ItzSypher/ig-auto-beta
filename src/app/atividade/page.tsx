@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { db } from "@/lib/supabase";
+import { SubscribeButton } from "@/components/SubscribeButton";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Atividade — IG Auto" };
@@ -124,6 +125,13 @@ export default async function AtividadePage() {
           painel da Meta.
         </p>
       )}
+
+      <section className="mt-8">
+        <h2 className="text-[13px] font-semibold uppercase tracking-wide text-neutral-500">
+          Entrega de eventos
+        </h2>
+        <SubscribeButton />
+      </section>
 
       <section className="mt-8">
         <h2 className="text-[13px] font-semibold uppercase tracking-wide text-neutral-500">
