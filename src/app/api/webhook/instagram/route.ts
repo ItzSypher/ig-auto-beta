@@ -3,6 +3,7 @@ import { after } from "next/server";
 import { verifyWebhookSignature } from "@/lib/meta";
 import { db } from "@/lib/supabase";
 import { enqueueFollowups, enqueueForTrigger, type TriggerKind } from "@/lib/enqueue";
+import { drain } from "@/lib/worker";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -237,6 +238,10 @@ export async function POST(req: Request) {
           await enqueueForTrigger(trigger);
         }
       }
+      // Drena já, sem esperar o próximo minuto do pg_cron: a resposta sai
+      // em segundos em vez de até 60. A trava atômica da fila garante que
+      // isto não colida com o cron rodando ao mesmo tempo.
+      await drain();
     } catch (err) {
       console.error("falha ao processar webhook", err);
     }
