@@ -88,10 +88,26 @@ export async function POST(req: Request) {
 
   const lista = (pages?.data ?? []) as Pagina[];
   if (lista.length === 0) {
+    // Lista vazia tem três causas comuns e o usuário não consegue distinguir
+    // entre elas sozinho: não existe Página; existe mas está em outro perfil
+    // do Facebook; ou existe e o usuário não a marcou na tela de autorização.
+    // Dizer de quem é o token elimina a segunda de imediato.
+    const euRes = await fetch(
+      `${GRAPH}/me?${new URLSearchParams({
+        fields: "id,name",
+        access_token: troca.access_token,
+      })}`,
+    );
+    const eu = await euRes.json().catch(() => null);
+    const quem = eu?.name ? `${eu.name} (id ${eu.id})` : "desconhecido";
+
     return NextResponse.json(
       {
         erro:
-          "Nenhuma Página do Facebook encontrada nesta conta. O Instagram profissional precisa estar vinculado a uma Página.",
+          `O token pertence ao perfil do Facebook: ${quem}. ` +
+          "Nenhuma Página apareceu para ele. Ou a Página não existe, ou foi " +
+          "criada em outro perfil, ou você não marcou a Página na tela de " +
+          "autorização ao gerar o token.",
       },
       { status: 400 },
     );
