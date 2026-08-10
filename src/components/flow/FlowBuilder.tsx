@@ -30,6 +30,7 @@ import {
   type ReminderData,
   type TriggerData,
 } from "@/lib/flow";
+import { flowToRow } from "@/lib/automation-mapper";
 import { nodeTypes } from "./NodeCards";
 import { Inspector } from "./Inspector";
 
@@ -111,24 +112,38 @@ function Canvas() {
   const [name, setName] = useState("AUTOMAÇÃO DE POSTS");
   const [live, setLive] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [automationId, setAutomationId] = useState<string | undefined>();
+  const [erro, setErro] = useState<string | null>(null);
+  const [salvando, setSalvando] = useState(false);
   const [showJson, setShowJson] = useState(false);
   const { screenToFlowPosition } = useReactFlow();
 
-  // Recupera o rascunho local. O piloto ainda não grava no Supabase.
+  // Carrega a automação do banco. Sem ela o motor não tem o que casar, então
+  // o que está na tela precisa ser o que está gravado.
   useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    try {
-      const doc = JSON.parse(raw);
-      if (Array.isArray(doc.nodes) && Array.isArray(doc.edges)) {
-        setNodes(doc.nodes);
-        setEdges(doc.edges);
-        if (typeof doc.name === "string") setName(doc.name);
-        if (typeof doc.live === "boolean") setLive(doc.live);
+    let cancelado = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/automations");
+        const { automacao } = await r.json();
+        if (cancelado || !automacao) return;
+
+        setAutomationId(automacao.id);
+        setName(automacao.name ?? "");
+        setLive(Boolean(automacao.active));
+
+        const flow = automacao.flow;
+        if (Array.isArray(flow?.nodes) && flow.nodes.length > 0) {
+          setNodes(flow.nodes);
+          setEdges(Array.isArray(flow.edges) ? flow.edges : []);
+        }
+      } catch {
+        // Banco fora do ar: segue com o piloto na tela, sem apagar nada.
       }
-    } catch {
-      // rascunho corrompido: segue com o fluxo piloto
-    }
+    })();
+    return () => {
+      cancelado = true;
+    };
   }, [setNodes, setEdges]);
 
   const onConnect = useCallback(
@@ -186,10 +201,41 @@ function Canvas() {
     [nodes, screenToFlowPosition, setNodes],
   );
 
-  const save = useCallback(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ name, live, nodes, edges }));
-    setSavedAt(new Date().toLocaleTimeString("pt-BR"));
-  }, [name, live, nodes, edges]);
+  const save = useCallback(
+    async (ativo = live) => {
+      setSalvando(true);
+      setErro(null);
+      // Cópia local do rascunho: se a rede cair, o trabalho não se perde.
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ name, live: ativo, nodes, edges }));
+      try {
+        const r = await fetch("/api/automations", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            ...flowToRow(name, ativo, nodes, edges),
+            ...(automationId ? { id: automationId } : {}),
+          }),
+        });
+        const body = await r.json();
+        if (!r.ok) throw new Error(body?.erro ?? `HTTP ${r.status}`);
+        if (body.id) setAutomationId(body.id);
+        setSavedAt(new Date().toLocaleTimeString("pt-BR"));
+      } catch (e) {
+        setErro(`Não salvou no banco: ${String(e)}`);
+      } finally {
+        setSalvando(false);
+      }
+    },
+    [name, live, nodes, edges, automationId],
+  );
+
+  // Publicar sem gravar já causou confusão: a tela mostrava LIVE e o motor
+  // não tinha automação nenhuma. Agora o toggle grava na hora.
+  const togglePublish = useCallback(() => {
+    const proximo = !live;
+    setLive(proximo);
+    void save(proximo);
+  }, [live, save]);
 
   const reset = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
@@ -235,7 +281,7 @@ function Canvas() {
 
         <button
           type="button"
-          onClick={() => setLive((v) => !v)}
+          onClick={togglePublish}
           disabled={!live && errors > 0}
           title={
             !live && errors > 0 ? "Corrija os erros do fluxo antes de publicar" : undefined
@@ -263,10 +309,11 @@ function Canvas() {
 
         <button
           type="button"
-          onClick={save}
+          onClick={() => void save()}
+          disabled={salvando}
           className="rounded-lg bg-neutral-900 px-3.5 py-1.5 text-[13px] font-medium text-white transition hover:bg-neutral-700"
         >
-          Salvar
+          {salvando ? "Salvando..." : "Salvar"}
         </button>
       </header>
 
@@ -343,7 +390,13 @@ function Canvas() {
 
           {savedAt && (
             <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-neutral-900/85 px-3 py-1.5 text-[12px] text-white">
-              Rascunho salvo neste navegador às {savedAt}
+              Salvo no banco às {savedAt}
+            </div>
+          )}
+
+          {erro && (
+            <div className="absolute bottom-3 left-1/2 max-w-[90%] -translate-x-1/2 rounded-lg bg-rose-600 px-3 py-2 text-[12px] text-white">
+              {erro}
             </div>
           )}
 

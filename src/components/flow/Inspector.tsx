@@ -163,7 +163,7 @@ function TriggerForm({ d, patch }: { d: TriggerData; patch: Patch }) {
 
       <Field
         label="Post específico (opcional)"
-        hint="Deixe vazio para valer em qualquer post. Preencha com o ID da mídia no Instagram."
+        hint="Deixe vazio para valer em qualquer post. Os IDs das suas publicações estão em /midias."
       >
         <input
           value={d.mediaId}
