@@ -1,4 +1,4 @@
-import { accessToken, replyToComment, sendMessage, type SendResult } from "@/lib/ig";
+import { account, replyToComment, sendMessage, type SendResult } from "@/lib/ig";
 import { db } from "@/lib/supabase";
 
 
@@ -54,7 +54,11 @@ async function windowOpen(contactId: string | null): Promise<boolean> {
   return Date.now() - new Date(last).getTime() < 24 * 3600 * 1000;
 }
 
-async function deliver(item: QueueItem, token: string): Promise<SendResult> {
+async function deliver(
+  item: QueueItem,
+  token: string,
+  igUserId: string,
+): Promise<SendResult> {
   const text = String(item.payload.text ?? "");
   const quickReply = (item.payload.quick_reply_label as string | null) ?? null;
   const buttonUrl = item.payload.button_url as string | undefined;
@@ -69,7 +73,7 @@ async function deliver(item: QueueItem, token: string): Promise<SendResult> {
       ? { comment_id: item.recipient_value }
       : { id: item.recipient_value };
 
-  return sendMessage(recipient, token, text, {
+  return sendMessage(igUserId, recipient, token, text, {
     quickReply,
     link: buttonUrl ? { label: buttonLabel, url: buttonUrl } : null,
   });
@@ -91,8 +95,9 @@ async function finish(
  * o mesmo item.
  */
 export async function drain() {
-  const token = await accessToken();
-  if (!token) return { erro: "sem token de acesso" };
+  const conta = await account();
+  if (!conta) return { erro: "nenhuma conta conectada" };
+  const { token, igUserId } = conta;
 
   const already = await sentLastHour();
   const budget = Math.max(0, MAX_PER_HOUR - already);
@@ -122,7 +127,7 @@ export async function drain() {
       continue;
     }
 
-    const result = await deliver(item, token);
+    const result = await deliver(item, token, igUserId);
 
     if (result.ok) {
       await finish(item.id, {

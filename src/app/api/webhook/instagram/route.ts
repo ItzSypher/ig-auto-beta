@@ -170,20 +170,21 @@ async function recordContact(e: NormalizedEvent) {
  * se demorarmos, e reenvio duplicado é pior do que processamento tardio.
  */
 export async function POST(req: Request) {
-  const appSecret = process.env.IG_APP_SECRET;
-  if (!appSecret) {
-    console.error("IG_APP_SECRET não está configurada");
+  // Com o login do Facebook os webhooks são assinados pelo secret do app do
+  // Facebook. O do Instagram continua aceito enquanto a migração não fecha.
+  const secrets = [process.env.FB_APP_SECRET, process.env.IG_APP_SECRET].filter(
+    (s): s is string => Boolean(s),
+  );
+  if (secrets.length === 0) {
+    console.error("nenhum app secret configurado");
     return new NextResponse("misconfigured", { status: 500 });
   }
 
   // Precisa ser o corpo cru: reserializar o JSON muda os bytes e a
   // assinatura deixa de bater.
   const rawBody = await req.text();
-  const signatureOk = verifyWebhookSignature(
-    rawBody,
-    req.headers.get("x-hub-signature-256"),
-    appSecret,
-  );
+  const header = req.headers.get("x-hub-signature-256");
+  const signatureOk = secrets.some((s) => verifyWebhookSignature(rawBody, header, s));
 
   if (!signatureOk) {
     console.warn("webhook com assinatura inválida, descartado");

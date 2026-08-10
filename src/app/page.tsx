@@ -19,8 +19,13 @@ const CHECKS: { key: string; label: string; why: string }[] = [
     why: "Acesso ao banco pelo servidor (as tabelas têm RLS sem políticas).",
   },
   {
-    key: "IG_APP_SECRET",
-    label: "Chave secreta do app do Instagram",
+    key: "FB_APP_ID",
+    label: "ID do app do Facebook",
+    why: "Troca o token curto do Graph API Explorer por um permanente.",
+  },
+  {
+    key: "FB_APP_SECRET",
+    label: "Chave secreta do app do Facebook",
     why: "Valida a assinatura X-Hub-Signature-256 do webhook.",
   },
   {
@@ -29,14 +34,9 @@ const CHECKS: { key: string; label: string; why: string }[] = [
     why: "Responde o handshake GET que a Meta faz ao salvar o webhook.",
   },
   {
-    key: "IG_ACCESS_TOKEN",
-    label: "Token de acesso do Instagram",
-    why: "Envia as respostas privadas e as DMs.",
-  },
-  {
     key: "CRON_SECRET",
     label: "Segredo do cron",
-    why: "Protege o endpoint que drena a fila.",
+    why: "Protege a drenagem da fila e a tela de conexão.",
   },
 ];
 
@@ -99,8 +99,11 @@ export default async function Home() {
           <div className="mt-3 rounded-xl border border-neutral-200 px-4 py-3">
             <p className="text-[14px] text-neutral-700">Nenhuma conta conectada.</p>
             <p className="mt-0.5 text-[12px] text-neutral-500">
-              Abra a &quot;URL incorporado&quot; do passo 4 no painel da Meta para
-              autorizar.
+              Conecte pelo login do Facebook em{" "}
+              <Link href="/conectar" className="underline hover:text-neutral-900">
+                /conectar
+              </Link>
+              .
             </p>
           </div>
         )}
