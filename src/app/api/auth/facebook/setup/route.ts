@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 type Pagina = {
   id: string;
   name: string;
-  access_token: string;
+  access_token?: string;
   instagram_business_account?: {
     id: string;
     username?: string;
@@ -16,16 +16,62 @@ type Pagina = {
   };
 };
 
+const CAMPOS =
+  "id,name,access_token,instagram_business_account{id,username,profile_picture_url}";
+
+async function graphGet(caminho: string, token?: string) {
+  // A troca do token curto se autentica por client_id/client_secret na própria
+  // query; mandar access_token vazio ali faz a Meta recusar.
+  const sufixo = token ? `${caminho.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(token)}` : "";
+  const res = await fetch(`${GRAPH}${caminho}${sufixo}`);
+  const body = await res.json().catch(() => null);
+  return { ok: res.ok, body };
+}
+
 /**
- * Converte um token curto do Graph API Explorer em credenciais utilizáveis.
+ * Acha as Páginas do usuário.
  *
- * Faz a cadeia que normalmente é manual:
- *   1. token curto de usuário -> token longo de usuário (60 dias)
- *   2. token longo -> lista de Páginas, cada uma com seu próprio token
- *   3. da Página escolhida, extrai a conta profissional do Instagram
- *
- * O token de Página derivado de um token longo de usuário não expira, então
- * depois disto não há renovação a fazer.
+ * `/me/accounts` só devolve Páginas em que o perfil tem papel direto. Página
+ * que pertence a um Portfólio empresarial não aparece ali — é preciso passar
+ * pelo negócio, o que exige a permissão business_management.
+ */
+async function listarPaginas(token: string) {
+  const encontradas = new Map<string, Pagina>();
+  const negociosVistos: { id: string; nome: string }[] = [];
+
+  const diretas = await graphGet(`/me/accounts?fields=${CAMPOS}`, token);
+  for (const p of (diretas.body?.data ?? []) as Pagina[]) {
+    encontradas.set(p.id, p);
+  }
+
+  // Mesmo achando Páginas diretas, varremos os portfólios: a Página que
+  // interessa pode estar só lá.
+  const negocios = await graphGet("/me/businesses?fields=id,name", token);
+  for (const n of (negocios.body?.data ?? []) as { id: string; name: string }[]) {
+    negociosVistos.push({ id: n.id, nome: n.name });
+
+    for (const aresta of ["owned_pages", "client_pages"]) {
+      const r = await graphGet(`/${n.id}/${aresta}?fields=${CAMPOS}`, token);
+      for (const p of (r.body?.data ?? []) as Pagina[]) {
+        if (!encontradas.has(p.id)) encontradas.set(p.id, p);
+      }
+    }
+  }
+
+  // Página vinda pelo negócio às vezes não traz o token junto; buscamos avulso.
+  for (const p of encontradas.values()) {
+    if (p.access_token) continue;
+    const r = await graphGet(`/${p.id}?fields=access_token`, token);
+    if (r.body?.access_token) p.access_token = r.body.access_token as string;
+  }
+
+  return { paginas: [...encontradas.values()], negocios: negociosVistos };
+}
+
+/**
+ * Converte um token curto do Graph API Explorer em credenciais utilizáveis:
+ * alonga o token, acha a Página com Instagram vinculado, e guarda o token
+ * dela. Token de Página derivado de token longo de usuário não expira.
  */
 export async function POST(req: Request) {
   const secret = process.env.CRON_SECRET;
@@ -54,99 +100,63 @@ export async function POST(req: Request) {
     return NextResponse.json({ erro: "Cole o token do Graph API Explorer." }, { status: 400 });
   }
 
-  // 1. curto -> longo
-  const trocaRes = await fetch(
-    `${GRAPH}/oauth/access_token?${new URLSearchParams({
-      grant_type: "fb_exchange_token",
-      client_id: appId,
-      client_secret: appSecret,
-      fb_exchange_token: token.trim(),
-    })}`,
-  );
-  const troca = await trocaRes.json().catch(() => null);
-  if (!trocaRes.ok || !troca?.access_token) {
+  // curto -> longo
+  const troca = await graphGet(
+    `/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}` +
+      `&client_secret=${appSecret}&fb_exchange_token=${encodeURIComponent(token.trim())}`,
+  ).catch(() => null);
+
+  const tokenLongo = troca?.body?.access_token as string | undefined;
+  if (!tokenLongo) {
     return NextResponse.json(
-      { erro: `Falha ao alongar o token: ${troca?.error?.message ?? "resposta inesperada"}` },
+      {
+        erro: `Falha ao alongar o token: ${troca?.body?.error?.message ?? "resposta inesperada"}`,
+      },
       { status: 502 },
     );
   }
 
-  // 2. Páginas do usuário, cada uma com o token dela
-  const pagesRes = await fetch(
-    `${GRAPH}/me/accounts?${new URLSearchParams({
-      fields: "id,name,access_token,instagram_business_account{id,username,profile_picture_url}",
-      access_token: troca.access_token,
-    })}`,
-  );
-  const pages = await pagesRes.json().catch(() => null);
-  if (!pagesRes.ok) {
-    return NextResponse.json(
-      { erro: `Falha ao listar Páginas: ${pages?.error?.message ?? "resposta inesperada"}` },
-      { status: 502 },
-    );
-  }
+  const { paginas, negocios } = await listarPaginas(tokenLongo);
 
-  const lista = (pages?.data ?? []) as Pagina[];
-  if (lista.length === 0) {
-    // Lista vazia tem três causas comuns e o usuário não consegue distinguir
-    // entre elas sozinho: não existe Página; existe mas está em outro perfil
-    // do Facebook; ou existe e o usuário não a marcou na tela de autorização.
-    // Dizer de quem é o token elimina a segunda de imediato.
-    const euRes = await fetch(
-      `${GRAPH}/me?${new URLSearchParams({
-        fields: "id,name",
-        access_token: troca.access_token,
-      })}`,
-    );
-    const eu = await euRes.json().catch(() => null);
-    const quem = eu?.name ? `${eu.name} (id ${eu.id})` : "desconhecido";
-
+  if (paginas.length === 0) {
+    const eu = await graphGet("/me?fields=id,name", tokenLongo);
+    const quem = eu.body?.name ? `${eu.body.name} (id ${eu.body.id})` : "desconhecido";
     return NextResponse.json(
       {
         erro:
-          `O token pertence ao perfil do Facebook: ${quem}. ` +
-          "Nenhuma Página apareceu para ele. Ou a Página não existe, ou foi " +
-          "criada em outro perfil, ou você não marcou a Página na tela de " +
-          "autorização ao gerar o token.",
+          `Token do perfil: ${quem}. Nenhuma Página encontrada, nem direta nem ` +
+          `em portfólio empresarial. Portfólios vistos: ${
+            negocios.length ? negocios.map((n) => n.nome).join(", ") : "nenhum"
+          }. Confira se a permissão business_management foi concedida.`,
       },
       { status: 400 },
     );
   }
 
-  const comInstagram = lista.filter((p) => p.instagram_business_account?.id);
+  const comInstagram = paginas.filter(
+    (p) => p.instagram_business_account?.id && p.access_token,
+  );
+
   if (comInstagram.length === 0) {
     return NextResponse.json(
       {
-        erro: "Nenhuma das suas Páginas tem conta do Instagram vinculada.",
-        paginas: lista.map((p) => ({ id: p.id, nome: p.name })),
-      },
-      { status: 400 },
-    );
-  }
-
-  const escolhida = page_id
-    ? comInstagram.find((p) => p.id === page_id)
-    : comInstagram[0];
-
-  if (!escolhida) {
-    return NextResponse.json(
-      {
-        erro: "page_id não encontrado entre as Páginas com Instagram.",
-        paginas: comInstagram.map((p) => ({
+        erro:
+          "Achei Páginas, mas nenhuma com Instagram vinculado E token acessível. " +
+          "Se a Página certa está na lista, verifique se você é administrador dela.",
+        paginas: paginas.map((p) => ({
           id: p.id,
           nome: p.name,
-          instagram: p.instagram_business_account?.username,
+          instagram: p.instagram_business_account?.username ?? "sem Instagram",
         })),
       },
       { status: 400 },
     );
   }
 
-  // Mais de uma opção e nenhuma escolhida: devolve a lista em vez de chutar.
   if (!page_id && comInstagram.length > 1) {
     return NextResponse.json(
       {
-        erro: "Você tem mais de uma Página com Instagram. Escolha uma e reenvie com o page_id.",
+        erro: "Mais de uma Página elegível. Escolha uma e reenvie com o ID.",
         paginas: comInstagram.map((p) => ({
           id: p.id,
           nome: p.name,
@@ -157,6 +167,21 @@ export async function POST(req: Request) {
     );
   }
 
+  const escolhida = page_id ? comInstagram.find((p) => p.id === page_id) : comInstagram[0];
+  if (!escolhida) {
+    return NextResponse.json(
+      {
+        erro: "O ID informado não está entre as Páginas elegíveis.",
+        paginas: comInstagram.map((p) => ({
+          id: p.id,
+          nome: p.name,
+          instagram: p.instagram_business_account?.username,
+        })),
+      },
+      { status: 400 },
+    );
+  }
+
   const ig = escolhida.instagram_business_account!;
 
   const { error } = await db()
@@ -164,7 +189,7 @@ export async function POST(req: Request) {
     .upsert(
       {
         id: 1,
-        ig_access_token: escolhida.access_token,
+        ig_access_token: escolhida.access_token!,
         ig_user_id: ig.id,
         ig_username: ig.username ?? null,
         ig_profile_picture_url: ig.profile_picture_url ?? null,
