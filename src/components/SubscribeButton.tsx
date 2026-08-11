@@ -2,20 +2,51 @@
 
 import { useState } from "react";
 
+type Tentativa = {
+  aceitos?: string[];
+  recusados?: { campo: string; motivo: string }[];
+};
+
 type Resultado = {
   ok?: boolean;
   erro?: string;
   dica?: string;
   pagina?: { id: string; nome: string };
-  aceitos?: string[];
-  recusados?: { campo: string; motivo: string }[];
+  instagram_id?: string;
+  via_pagina?: Tentativa;
+  via_instagram?: Tentativa;
   escopos?: string[];
-  tem_pages_manage_metadata?: boolean;
 };
 
+function Tentativa({ titulo, dados }: { titulo: string; dados?: Tentativa }) {
+  if (!dados) return null;
+  const aceitos = dados.aceitos ?? [];
+  const recusados = dados.recusados ?? [];
+
+  return (
+    <div className="mt-2">
+      <p className="font-medium">
+        {titulo}: {aceitos.length > 0 ? `${aceitos.length} campo(s) assinado(s)` : "recusado"}
+      </p>
+      {aceitos.length > 0 && <p className="opacity-80">✓ {aceitos.join(", ")}</p>}
+      {recusados.length > 0 && (
+        // O motivo de cada recusa é o que diz qual permissão a Meta quer.
+        <ul className="mt-1 space-y-0.5 opacity-80">
+          {recusados.slice(0, 3).map((r) => (
+            <li key={r.campo}>
+              ✗ {r.campo}: {r.motivo}
+            </li>
+          ))}
+          {recusados.length > 3 && <li>… e mais {recusados.length - 3}</li>}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /**
- * Dispara a inscrição da Página no app sem precisar de console do navegador.
- * A chave é o CRON_SECRET — sem ela qualquer visitante mexeria na config.
+ * Dispara a inscrição sem precisar de console. A chave é o CRON_SECRET —
+ * sem ela qualquer visitante mexeria na configuração.
  */
 export function SubscribeButton() {
   const [chave, setChave] = useState("");
@@ -42,7 +73,8 @@ export function SubscribeButton() {
   return (
     <div className="mt-3 rounded-xl border border-neutral-200 p-4">
       <p className="text-[13px] text-neutral-700">
-        Inscreve a Página no app. Sem isso a Meta aceita o endereço do webhook e
+        Tenta inscrever nos dois endereços possíveis: pelo ID da Página e pelo ID da
+        conta do Instagram. Sem inscrição, a Meta aceita o endereço do webhook e
         nunca envia evento.
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -59,42 +91,29 @@ export function SubscribeButton() {
           disabled={carregando || !chave.trim()}
           className="rounded-lg bg-neutral-900 px-3.5 py-2 text-[13px] font-medium text-white transition hover:bg-neutral-700 disabled:opacity-40"
         >
-          {carregando ? "Assinando..." : "Assinar webhooks"}
+          {carregando ? "Tentando..." : "Assinar webhooks"}
         </button>
       </div>
 
       {res && (
         <div
-          className={`mt-3 rounded-lg px-3 py-2 text-[12px] ${
+          className={`mt-3 rounded-lg px-3 py-2.5 text-[12px] leading-relaxed ${
             res.ok ? "bg-emerald-50 text-emerald-900" : "bg-rose-50 text-rose-900"
           }`}
         >
           {res.pagina && (
             <p>
-              Página: <strong>{res.pagina.nome}</strong>
+              Página: <strong>{res.pagina.nome}</strong> · Instagram:{" "}
+              <code>{res.instagram_id}</code>
             </p>
           )}
-          {res.aceitos && res.aceitos.length > 0 && (
-            <p>Assinados: {res.aceitos.join(", ")}</p>
-          )}
-          {res.recusados && res.recusados.length > 0 && (
-            <p className="mt-1 opacity-80">
-              Recusados: {res.recusados.map((r) => r.campo).join(", ")}
-            </p>
-          )}
+          <Tentativa titulo="Pelo ID da Página" dados={res.via_pagina} />
+          <Tentativa titulo="Pelo ID do Instagram" dados={res.via_instagram} />
           {res.escopos && res.escopos.length > 0 && (
-            <p className="mt-1 opacity-80">
-              Permissões do token: {res.escopos.join(", ")}
-            </p>
+            <p className="mt-2 opacity-70">Permissões do token: {res.escopos.join(", ")}</p>
           )}
-          {res.tem_pages_manage_metadata === false && (
-            <p className="mt-1 font-medium">
-              Falta pages_manage_metadata no token — é ela que autoriza inscrever
-              a Página.
-            </p>
-          )}
-          {res.erro && <p>{res.erro}</p>}
-          {res.dica && <p className="mt-1 opacity-80">{res.dica}</p>}
+          {res.erro && <p className="mt-2">{res.erro}</p>}
+          {res.dica && <p className="mt-2">{res.dica}</p>}
         </div>
       )}
     </div>

@@ -4,26 +4,28 @@ import { GRAPH, account, inspectToken } from "@/lib/ig";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/**
- * Campos que interessam ao motor.
- *
- * A lista aceita varia conforme o app e o tipo da Página, e a Meta recusa o
- * lote inteiro se um único nome for inválido. Por isso tentamos em bloco e,
- * na recusa, um a um — melhor assinar cinco de seis do que nenhum.
- */
-const CANDIDATOS = [
+/** Campos válidos ao assinar pelo ID da Página (família Messenger). */
+const CAMPOS_PAGINA = [
   "messages",
   "messaging_postbacks",
   "messaging_optins",
   "message_reactions",
   "messaging_referrals",
-  "comments",
   "feed",
 ];
 
-async function assinar(pageId: string, token: string, campos: string[]) {
+/** Campos válidos ao assinar pelo ID da conta do Instagram. */
+const CAMPOS_INSTAGRAM = [
+  "comments",
+  "messages",
+  "message_reactions",
+  "live_comments",
+  "mentions",
+];
+
+async function chamar(alvo: string, token: string, campos: string[]) {
   const res = await fetch(
-    `${GRAPH}/${pageId}/subscribed_apps?${new URLSearchParams({
+    `${GRAPH}/${alvo}/subscribed_apps?${new URLSearchParams({
       subscribed_fields: campos.join(","),
       access_token: token,
     })}`,
@@ -34,10 +36,33 @@ async function assinar(pageId: string, token: string, campos: string[]) {
 }
 
 /**
- * Inscreve a Página no app.
+ * Assina um alvo, tolerando campo inválido.
  *
- * Pelo caminho do login do Facebook não basta configurar o webhook no painel:
- * sem a Página inscrita, a Meta aceita o endereço e nunca envia evento.
+ * A Meta recusa o lote inteiro se um único nome não for aceito, e a lista
+ * válida muda conforme o app. Tentamos em bloco e, na recusa, um a um.
+ */
+async function assinar(alvo: string, token: string, candidatos: string[]) {
+  const aceitos: string[] = [];
+  const recusados: { campo: string; motivo: string }[] = [];
+
+  const lote = await chamar(alvo, token, candidatos);
+  if (lote.ok) return { aceitos: candidatos, recusados };
+
+  for (const campo of candidatos) {
+    const r = await chamar(alvo, token, [campo]);
+    if (r.ok) aceitos.push(campo);
+    else recusados.push({ campo, motivo: r.erro ?? "recusado" });
+  }
+  return { aceitos, recusados };
+}
+
+/**
+ * Inscreve no app para receber webhooks.
+ *
+ * Há dois endereços possíveis e qual funciona depende de como o app foi
+ * configurado na Meta: pelo ID da Página (exige pages_manage_metadata) ou
+ * pelo ID da conta do Instagram (exige instagram_manage_messages). Tentamos
+ * os dois em vez de exigir que o usuário descubra qual é o caso dele.
  */
 export async function POST(req: Request) {
   const secret = process.env.CRON_SECRET;
@@ -63,51 +88,42 @@ export async function POST(req: Request) {
     );
   }
 
-  const aceitos: string[] = [];
-  const recusados: { campo: string; motivo: string }[] = [];
+  const viaPagina = await assinar(me.id, conta.token, CAMPOS_PAGINA);
+  const viaInstagram = await assinar(conta.igUserId, conta.token, CAMPOS_INSTAGRAM);
 
-  const lote = await assinar(me.id, conta.token, CANDIDATOS);
-  if (lote.ok) {
-    aceitos.push(...CANDIDATOS);
-  } else {
-    for (const campo of CANDIDATOS) {
-      const r = await assinar(me.id, conta.token, [campo]);
-      if (r.ok) aceitos.push(campo);
-      else recusados.push({ campo, motivo: r.erro ?? "recusado" });
-    }
-  }
-
-  // Confere o que ficou de fato, em vez de confiar no "success".
-  const conf = await fetch(
-    `${GRAPH}/${me.id}/subscribed_apps?access_token=${encodeURIComponent(conta.token)}`,
-  );
-  const confirmado = await conf.json().catch(() => null);
-
-  // Escopos do token: sem isto ficaríamos adivinhando se a permissão que a
-  // Meta exige para inscrever a Página está presente.
   const info = await inspectToken(conta.token);
   const escopos = info.ok ? info.escopos : [];
 
-  const nenhum = aceitos.length === 0;
+  // Confere o que ficou de fato nos dois alvos.
+  const confs = await Promise.all(
+    [me.id, conta.igUserId].map(async (alvo) => {
+      const r = await fetch(
+        `${GRAPH}/${alvo}/subscribed_apps?access_token=${encodeURIComponent(conta.token)}`,
+      );
+      const b = await r.json().catch(() => null);
+      return { alvo, assinado: b?.data ?? b?.error?.message ?? null };
+    }),
+  );
+
+  const total = viaPagina.aceitos.length + viaInstagram.aceitos.length;
+
   return NextResponse.json(
     {
-      ok: !nenhum,
+      ok: total > 0,
       pagina: { id: me.id, nome: me.name },
-      aceitos,
-      recusados,
+      instagram_id: conta.igUserId,
+      via_pagina: viaPagina,
+      via_instagram: viaInstagram,
       escopos,
-      tem_pages_manage_metadata: escopos.includes("pages_manage_metadata"),
-      confirmado: confirmado?.data ?? confirmado,
-      ...(nenhum
+      confirmado: confs,
+      ...(total === 0
         ? {
             dica:
-              "Nenhum campo entrou. Normalmente é falta da permissão " +
-              "pages_manage_metadata no token. Se ela não aparece no Graph API " +
-              "Explorer, use o interruptor 'Assinatura do webhook' no passo 2 do " +
-              "painel da API do Instagram — ele faz a mesma coisa pela interface.",
+              "Nenhum dos dois endereços aceitou. Me mande este retorno inteiro: " +
+              "os motivos de recusa dizem qual permissão a Meta está exigindo.",
           }
         : {}),
     },
-    { status: nenhum ? 502 : 200 },
+    { status: total > 0 ? 200 : 502 },
   );
 }
