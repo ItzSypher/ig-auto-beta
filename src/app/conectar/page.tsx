@@ -72,7 +72,7 @@ export default function ConectarPage() {
         <li>
           <strong>3.</strong> Em <em>Permissions</em>, marque:
           <code className="mt-1 block rounded bg-white px-2 py-1.5 text-[12px] text-neutral-800">
-            pages_show_list, pages_manage_metadata, pages_read_engagement,
+            pages_show_list, pages_read_engagement, business_management,
             instagram_basic, instagram_manage_messages, instagram_manage_comments
           </code>
         </li>
